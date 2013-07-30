@@ -1,4 +1,5 @@
-IcyPlugin-EvaScanner
-====================
+IcyPlugins for EVA-NDE Project
+==============================
 
-IcyPlugin-EvaScanner is a plugin designed for Icy software, originally used in a Ultrasonic Imaging System. 
+ * Chart1DCanvas
+ * EvaScanner
