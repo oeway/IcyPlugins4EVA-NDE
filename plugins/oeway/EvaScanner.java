@@ -104,11 +104,11 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 		EzGroup groupMark = new EzGroup("Mark", getPos,posX,posY,gotoPostion,markPos);
 		super.addEzComponent(groupMark);			
 		
-		EzGroup groupScanMap = new EzGroup("Scan Map", scanMapSeq,stepSize,generateFilePath,generatePath);
+		EzGroup groupScanMap = new EzGroup("Scan Map", scanMapSeq,stepSize, scanSpeed,generateFilePath,generatePath);
 		super.addEzComponent(groupScanMap);	
 		
 		
-		EzGroup groupSettings = new EzGroup("Settings", pathFile, scanSpeed,note); //TODO:add targetFolder
+		EzGroup groupSettings = new EzGroup("Settings", pathFile,note); //TODO:add targetFolder
 		super.addEzComponent(groupSettings);
 		
 		core = MicroscopeCore.getCore();
@@ -303,7 +303,8 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 		  //Read File Line By Line
 		  HashMap<String , String> settings = new HashMap<String , String>();   
 		  
-
+		  int maxRetryCount = 3;
+		  String lastG00="";
 		  super.getUI().setProgressBarMessage("Action...");
 		  while ((strLine = br.readLine()) != null && !stopFlag) {
 			  	// Print the content on the console
@@ -344,20 +345,46 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 			  		
 			  	}
 			  	else if (strLine.startsWith("G01")){
-			  		
-			  		core.setProperty(xyStageParentLabel, "Command",strLine);
-			  		//excute command
-			  		if(!snap2Sequence()){
+			  		boolean success = false;
+			  		int retryCount = 0;
+
+			  		while(retryCount<maxRetryCount && !success){
+			  			core.setProperty(xyStageParentLabel, "Command",strLine);			  			
+			  			retryCount++;
+				  		//excute command
+				  		if(snap2Sequence())
+				  			success = true;
+				  		else
+				  			success = false;
+				  		if(!waitUntilComplete())
+				  			success = false;
+				  		if(success)
+				  			break;
+				  		
+				  		//if not success, then redo
+				  		core.setProperty(xyStageParentLabel, "Command",lastG00);
+				  		if(! waitUntilComplete()){
+				  			super.getUI().setProgressBarMessage("error!");
+				  			return;
+				  		}
+				  		
+			  		}
+			  		if(!success){
 			  			new AnnounceFrame("Error when snapping image!");
 			  			break; //exit current progress!
-			  		}	
+			  		}
+			  		cpt++;
+			  		super.getUI().setProgressBarValue(((cpt/frameCount)*100)%100);
+			  		super.getUI().setProgressBarMessage(Integer.toString(cpt)+"/"+ Long.toString(frameCount));
+			  	}
+			  	else if (strLine.startsWith("G00")){
+			  		lastG00 = strLine;
+			  		core.setProperty(xyStageParentLabel, "Command",strLine);
 			  		if(! waitUntilComplete()){
 			  			super.getUI().setProgressBarMessage("error!");
 			  			return;
 			  		}
-			  		cpt++;
-			  		super.getUI().setProgressBarValue(((cpt/frameCount)*100)%100);
-			  	}
+			  	}			  	
 			  	else{
 			  		core.setProperty(xyStageParentLabel, "Command",strLine);
 			  		if(! waitUntilComplete()){
@@ -498,7 +525,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 						pw.printf("(newSequence=%s-%d)\n",roi.getName(),i);
 						pw.printf("(location=%d,%d)\n",(int)x0,(int)y0);
 						pw.printf("(width=%d)\n",(int)((double)(x1-x0)/stepSize.getValue()-0.5));	
-						pw.printf("(height=%d)\n",(int)((double)(y1-y0)/stepSize.getValue()-0.5));	
+						pw.printf("(height=%d)\n",(int)((double)(y1-y0)/stepSize.getValue()+0.5));	
 						pw.printf("G90\n");		
 						pw.printf("M108 P%f Q%d\n",stepSize.getValue(),0);
 						
@@ -514,7 +541,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 					File old = pathFile.getValue();
 					pathFile.setValue(generateFilePath.getValue()); //set the path as the default value.
 					pathFile.valueChanged(null,old, generateFilePath.getValue());
-					new AnnounceFrame("Generated succes sfully!");
+					new AnnounceFrame("Generated successfully!");
 					
 
 				}
