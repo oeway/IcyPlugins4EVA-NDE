@@ -8,12 +8,14 @@ import icy.gui.frame.progress.AnnounceFrame;
 import icy.image.IcyBufferedImage;
 import icy.main.Icy;
 import icy.roi.ROI2D;
+import icy.sequence.MetaDataUtil;
 import icy.sequence.Sequence;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.BufferedReader;
 import java.io.DataInputStream;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.io.InputStreamReader;
@@ -23,6 +25,8 @@ import java.util.Calendar;
 import java.util.HashMap;
 
 import javax.swing.JButton;
+
+import loci.formats.ome.OMEXMLMetadataImpl;
 
 import plugins.adufour.ezplug.*;
 import icy.gui.viewer.Viewer;
@@ -95,6 +99,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 		
 		// let's group other variables per type
 		stepSize.setValue(1.0);
+		scanSpeed.setValue(1000.0);
 		
 		EzGroup groupMark = new EzGroup("Mark", getPos,posX,posY,gotoPostion,markPos);
 		super.addEzComponent(groupMark);			
@@ -141,6 +146,44 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
   		}
   		return true;
 		
+	}	
+	protected boolean createAndAdd(IcyBufferedImage capturedImage)
+	{
+		try
+		{
+		   	if(currentSequence !=null)
+	    	{
+	//    		if(targetFolder.getValue() == null){
+	//    			new AnnounceFrame("Please select a target folder to store data!");
+	//    		}
+	    	    //TODO:save file here
+	    	}
+	    	
+	        MicroscopeSequence s = new MicroscopeSequence(capturedImage);
+	        Calendar calendar = Calendar.getInstance();
+	        Icy.getMainInterface().addSequence(s);
+	        s.setName(currentSeqName + "__" + calendar.get(Calendar.MONTH) + "_" + calendar.get(Calendar.DAY_OF_MONTH) + "_"
+	                + calendar.get(Calendar.YEAR) + "-" + calendar.get(Calendar.HOUR_OF_DAY) + "_"
+	                + calendar.get(Calendar.MINUTE) + "_" + calendar.get(Calendar.SECOND));
+	        currentSequence = s;
+	        lastSeqName = currentSeqName;
+	        
+	        currentSequence.setTimeInterval(1e-12); //1G Hz Sample Rate
+	        currentSequence.setPixelSizeX(stepSize.getValue()*1000.0);
+	        currentSequence.setPixelSizeY(stepSize.getValue()*1000.0);
+	        currentSequence.setPixelSizeZ(stepSize.getValue()*1000.0);
+	
+	        
+	        OMEXMLMetadataImpl md = currentSequence.getMetadata();
+	        md.setImageDescription(note.getValue(), 0);
+
+		}
+		catch(Exception e)
+		{
+			new AnnounceFrame("Error when create new sequence!");
+			return false;
+		}
+        return true;
 	}
 	protected boolean snap2Sequence()
 	{
@@ -159,21 +202,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
         
         if(!lastSeqName.equals( currentSeqName) || currentSequence == null )
         {
-        	if(currentSequence !=null)
-        	{
-//        		if(targetFolder.getValue() == null){
-//        			new AnnounceFrame("Please select a target folder to store data!");
-//        		}
-        	    //TODO:save file here
-        	}
-	        MicroscopeSequence s = new MicroscopeSequence(capturedImage);
-	        Calendar calendar = Calendar.getInstance();
-	        Icy.getMainInterface().addSequence(s);
-	        s.setName(currentSeqName + "__" + calendar.get(Calendar.MONTH) + "_" + calendar.get(Calendar.DAY_OF_MONTH) + "_"
-	                + calendar.get(Calendar.YEAR) + "-" + calendar.get(Calendar.HOUR_OF_DAY) + "_"
-	                + calendar.get(Calendar.MINUTE) + "_" + calendar.get(Calendar.SECOND));
-	        currentSequence = s;
-	        lastSeqName = currentSeqName;
+        	createAndAdd(capturedImage);
         }
         else
         {
@@ -192,22 +221,8 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
             }
             catch(IndexOutOfBoundsException e2)
             {
-            	if(currentSequence !=null)
-            	{
-//            		if(targetFolder.getValue() == null){
-//            			new AnnounceFrame("Please select a target folder to store data!");
-//            		}
-            	    //TODO:save file here
-            	}
-    	        MicroscopeSequence s = new MicroscopeSequence(capturedImage);
-    	        Calendar calendar = Calendar.getInstance();
-    	        Icy.getMainInterface().addSequence(s);
-    	        s.setName(currentSeqName + "__" + calendar.get(Calendar.MONTH) + "_" + calendar.get(Calendar.DAY_OF_MONTH) + "_"
-    	                + calendar.get(Calendar.YEAR) + "-" + calendar.get(Calendar.HOUR_OF_DAY) + "_"
-    	                + calendar.get(Calendar.MINUTE) + "_" + calendar.get(Calendar.SECOND));
-    	        currentSequence = s;
-    	        lastSeqName = currentSeqName;
-    	        
+            	createAndAdd(capturedImage);
+            	new AnnounceFrame("IndexOutOfBoundsException,create new sequence instead!");
             }
         }
         return true;
@@ -484,20 +499,23 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 						pw.printf("(location=%d,%d)\n",(int)x0,(int)y0);
 						pw.printf("(width=%d)\n",(int)((double)(x1-x0)/stepSize.getValue()-0.5));	
 						pw.printf("(height=%d)\n",(int)((double)(y1-y0)/stepSize.getValue()-0.5));	
-						pw.printf("(G90)\n");		
+						pw.printf("G90\n");		
 						pw.printf("M108 P%f Q%d\n",stepSize.getValue(),0);
 						
 						for(double b=y0;b<=y1;b+=stepSize.getValue())	
 						{
 							pw.printf("G00 X%f Y%f\n",x0,b);
-							pw.printf("G01 X%f Y%f\n",x1,b);
+							pw.printf("G01 X%f Y%f F%f\n",x1,b,scanSpeed.getValue());
 						}
-						pw.printf("G00 X0 Y0\n");
-						pw.close();	
-						
-						pathFile.setValue(generateFilePath.getValue()); //set the path as the default value.
-						new AnnounceFrame("Generated successfully!");
-					}
+					}	
+					pw.printf("G00 X0 Y0\n");
+					pw.close();	
+					
+					File old = pathFile.getValue();
+					pathFile.setValue(generateFilePath.getValue()); //set the path as the default value.
+					pathFile.valueChanged(null,old, generateFilePath.getValue());
+					new AnnounceFrame("Generated succes sfully!");
+					
 
 				}
 			} catch (Exception e1) {
