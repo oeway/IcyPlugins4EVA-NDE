@@ -47,7 +47,9 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
     Sequence currentSequence = null;
 	EzButton 					markPos;
 	EzButton 					getPos;	
-	EzButton 					gotoPostion;	
+	EzButton 					gotoPostion;
+	EzButton 					runBundlebox;
+	
 	
 	EzVarDouble					posX;
 	EzVarDouble					posY;	
@@ -83,6 +85,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 		markPos = new EzButton("Mark Position", this);
 		gotoPostion = new EzButton("Goto Position", this);		
 		generatePath = new EzButton("Generate Path", this);
+		runBundlebox = new EzButton("Run Bundle Box",this);
 		getPos = new EzButton("Get Position", this);		
 		generateFilePath = new EzVarFile("Save Path", null);
 		posX = new EzVarDouble("X");
@@ -104,7 +107,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 		EzGroup groupMark = new EzGroup("Mark", getPos,posX,posY,gotoPostion,markPos);
 		super.addEzComponent(groupMark);			
 		
-		EzGroup groupScanMap = new EzGroup("Scan Map", scanMapSeq,stepSize, scanSpeed,generateFilePath,generatePath);
+		EzGroup groupScanMap = new EzGroup("Scan Map",scanMapSeq,runBundlebox,stepSize, scanSpeed,generateFilePath,generatePath);
 		super.addEzComponent(groupScanMap);	
 		
 		
@@ -122,28 +125,49 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 		   xyStageParentLabel = core.getParentLabel(xyStageLabel);
 		} catch (Exception e1) {
 			new AnnounceFrame("XY Stage Error!");
+			System.out.println("XY Stage Error...");
 			return false;
 		} 
 		}
   		String status = "";
   		//wait until movement complete
+  		System.out.println("waiting for the stage...");
+  		int retry= 0;
   		while(!stopFlag){
   			try {
 				status = core.getProperty(xyStageParentLabel, "Status");
 			} catch (Exception e) {
+				if(retry++<100)
+				{
+					e.printStackTrace();
+					try{
+						  Thread.currentThread().sleep(100);//sleep for 1000 ms
+						  
+						}
+						catch(Exception ie){
+						
+						}
+					
+				}
+				else
 				return false;
 			}
   			if(status.equals("Idle"))
   				break;
   			else if(!status.equals("Run"))
+  			{
+  				System.out.println("status error:"+status);
   				break;
+  			}
   			Thread.yield();
   		}
   		if(!status.equals( "Idle") && !stopFlag) // may be error occured
   		{
+  			System.out.println("Stage error");
   			new AnnounceFrame("XY stage status error!");
   			return false;
   		}
+  		System.out.println("stage ok!");
   		return true;
 		
 	}	
@@ -176,6 +200,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 	        
 	        OMEXMLMetadataImpl md = currentSequence.getMetadata();
 	        md.setImageDescription(note.getValue(), 0);
+	        new AnnounceFrame("New Sequence created:"+currentSeqName);
 
 		}
 		catch(Exception e)
@@ -232,7 +257,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 	protected void execute()
 	{
 		
-		int cpt = 0;
+		long cpt = 0;
 		stopFlag = false;
 		lastSeqName = "";
 		// main plugin code goes here, and runs in a separate thread
@@ -285,7 +310,13 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 //			return;
 //		}
 	
-		
+		String oldRowCount="1";
+		try {
+			oldRowCount = core.getProperty(picoCameraLabel, "RowCount");
+		} catch (Exception e1) {
+			  new AnnounceFrame("Camera Error!");
+			  return;
+		}
 		System.out.println(scanSpeed.name + " = " + scanSpeed.getValue());
 		System.out.println(pathFile.name + " = " + pathFile.getValue());
 		System.out.println(targetFolder.name + " = " + targetFolder.getValue());
@@ -301,8 +332,9 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 		  BufferedReader br = new BufferedReader(new InputStreamReader(in));
 		  String strLine;
 		  //Read File Line By Line
-		  HashMap<String , String> settings = new HashMap<String , String>();   
+		  HashMap<String , String> settings = new HashMap<String , String>();  
 		  
+
 		  int maxRetryCount = 3;
 		  String lastG00="";
 		  super.getUI().setProgressBarMessage("Action...");
@@ -321,6 +353,8 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 			  	   try{
 				  		if(tmp[0].equals("newsequence") ){
 				  			currentSeqName = tmp[1];
+				  			cpt =0;
+				  			
 				  		}
 				  		else if(tmp[0].equals("width")){
 				  			rowCount = Integer.parseInt(tmp[1]);
@@ -334,7 +368,14 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 				  		}
 				  		else if(tmp[0].equals("samplelength")){
 				  			core.setProperty(picoCameraLabel, "SampleLength",tmp[1]);
-				  		}			  		
+				  		}
+				  		else if(tmp[0].equals("reset")){
+				  			if(tmp[1].equals("1"))
+				  			{
+				  				String a = String.valueOf(Character.toChars(18));
+				  				core.setProperty(xyStageParentLabel, "Command",a);
+				  			}
+				  		}
 				  		else{
 				  			new AnnounceFrame(tmp[0]+":"+tmp[1]);
 				  		}
@@ -351,13 +392,25 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 			  		while(retryCount<maxRetryCount && !success){
 			  			core.setProperty(xyStageParentLabel, "Command",strLine);			  			
 			  			retryCount++;
-				  		//excute command
-				  		if(snap2Sequence())
-				  			success = true;
-				  		else
-				  			success = false;
+			  			try
+			  			{
+			  				System.out.println("snapping");
+					  		//excute command
+					  		if(snap2Sequence())
+					  			success = true;
+					  		else
+					  			success = false;
+
+			  			}
+			  			catch(Exception e4)
+			  			{
+			  				new AnnounceFrame("Error when snapping image!");
+			  				System.out.println("error when snape image:");
+			  				e4.printStackTrace();
+			  			}
 				  		if(!waitUntilComplete())
 				  			success = false;
+				  		    
 				  		if(success)
 				  			break;
 				  		
@@ -365,9 +418,16 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 				  		core.setProperty(xyStageParentLabel, "Command",lastG00);
 				  		if(! waitUntilComplete()){
 				  			super.getUI().setProgressBarMessage("error!");
+							  try {
+									core.setProperty(picoCameraLabel, "RowCount",oldRowCount);
+								} catch (Exception e1) {
+									// TODO Auto-generated catch block
+									e1.printStackTrace();
+								}
+							  System.out.println("Error when waiting for the stage to complete");
 				  			return;
 				  		}
-				  		
+			  			
 			  		}
 			  		if(!success){
 			  			new AnnounceFrame("Error when snapping image!");
@@ -375,31 +435,56 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 			  		}
 			  		cpt++;
 			  		super.getUI().setProgressBarValue(((cpt/frameCount)*100)%100);
-			  		super.getUI().setProgressBarMessage(Integer.toString(cpt)+"/"+ Long.toString(frameCount));
+			  		super.getUI().setProgressBarMessage(Long.toString(cpt)+"/"+ Long.toString(frameCount));
 			  	}
-			  	else if (strLine.startsWith("G00")){
-			  		lastG00 = strLine;
-			  		core.setProperty(xyStageParentLabel, "Command",strLine);
-			  		if(! waitUntilComplete()){
-			  			super.getUI().setProgressBarMessage("error!");
-			  			return;
-			  		}
-			  	}			  	
+			  				  	
 			  	else{
-			  		core.setProperty(xyStageParentLabel, "Command",strLine);
+			  	     if (strLine.startsWith("G00"))
+			   		lastG00 = strLine;		
+			  	     try
+			  	     {
+			  	    	 core.setProperty(xyStageParentLabel, "Command",strLine);
+			  	     }
+			  		catch (Exception e)//Catch exception if any
+			  			{
+			  				e.printStackTrace();
+			  			}
+			  		
 			  		if(! waitUntilComplete()){
 			  			super.getUI().setProgressBarMessage("error!");
+						  try {
+								core.setProperty(picoCameraLabel, "RowCount",oldRowCount);
+							} catch (Exception e1) {
+								// TODO Auto-generated catch block
+								e1.printStackTrace();
+							}
 			  			return;
 			  		}
 			  	}
 			  }
 		  //Close the input stream
+		  currentSequence = null;
+		  lastG00 ="";
 		  in.close();
+		  core.setProperty(picoCameraLabel, "RowCount",oldRowCount);
 		}
 		catch (Exception e){//Catch exception if any
 			  super.getUI().setProgressBarMessage("error!");
-			  System.err.println("Error: " + e.getMessage());
+			  System.err.println("Error: " );
+			  e.printStackTrace();
+			  try {
+				core.setProperty(picoCameraLabel, "RowCount",oldRowCount);
+			} catch (Exception e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
 			  return;
+		}
+		try {
+			core.setProperty(picoCameraLabel, "RowCount",oldRowCount);
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
 		}
 //		int cpt = 0;
 //		while (!stopFlag)
@@ -450,6 +535,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 				}
 			} catch (Exception e1) {
 				  new AnnounceFrame("Marking on sequence failed!");
+				  e1.printStackTrace();
 				  return;
 			}
 			
@@ -478,8 +564,91 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 					  return;
 				}
 		}
-		else if (((JButton)e.getSource()).getText().equals(generatePath.name)) {
+		else if (((JButton)e.getSource()).getText().equals(runBundlebox.name)) {
+		    	System.out.println("Run bundle box ...");
+		    	class MyRunner implements Runnable{
+		    		  public void run(){
+					      try {
+								if(scanMapSeq != null)
+								{
+									   xyStageLabel = core.getXYStageDevice();
+									   
+									   try {
+										   xyStageParentLabel = core.getParentLabel(xyStageLabel);
+										} catch (Exception e1) {
+											new AnnounceFrame("Please select 'EVA_NDE_Grbl' as the default XY Stage!");
+											return;
+										} 
+									   
+										try {
+											if(!core.hasProperty(xyStageParentLabel,"Command"))
+											  {
+												  new AnnounceFrame("Please select 'EVA_NDE_Grbl' as the default XY Stage!");
+												  return;
+											  }
+										} catch (Exception e1) {
+											  new AnnounceFrame("XY Stage Error!");
+											  return;
+										}
+										
 			
+									
+									ArrayList<ROI2D> rois;	
+								
+									try
+									{
+										rois= scanMapSeq.getValue().getROI2Ds();
+									}
+									catch (Exception e1)
+									{
+										new AnnounceFrame("Please add at least one 2d roi in the scan map sequence!");
+										return;	
+									}
+									  if(rois.size()<=0)
+									    {
+									    	  new AnnounceFrame("No roi found!");
+											  return;
+									    }
+								    core.setProperty(xyStageParentLabel, "Command","G90");
+									for(int i=0;i<rois.size();i++) 
+									{
+										ROI2D roi = rois.get(i);
+										double x0 = roi.getBounds().getMinX();
+										double y0 = roi.getBounds().getMinY();
+										double x1 = roi.getBounds().getMaxX();
+										double y1 = roi.getBounds().getMaxY();
+										
+										
+										core.setProperty(xyStageParentLabel, "Command","G00 X" + Double.toString(x0)+" Y" + Double.toString(y0));
+										waitUntilComplete();
+										core.setProperty(xyStageParentLabel, "Command","G00 X" + Double.toString(x1)+" Y" + Double.toString(y0));
+										waitUntilComplete();
+										core.setProperty(xyStageParentLabel, "Command","G00 X" + Double.toString(x1)+" Y" + Double.toString(y1));
+										waitUntilComplete();
+										core.setProperty(xyStageParentLabel, "Command","G00 X" + Double.toString(x0)+" Y" + Double.toString(y1));
+										waitUntilComplete();
+										core.setProperty(xyStageParentLabel, "Command","G00 X" + Double.toString(x0)+" Y" + Double.toString(y0));
+										waitUntilComplete();
+									}	
+				
+			
+								}
+								 new AnnounceFrame("Bundle box complete!");
+							} catch (Exception e1) {
+								  new AnnounceFrame("Error when run bundle box!");
+								  return;
+							}
+		    		  }
+		    		}
+		    	     MyRunner myRunner = new MyRunner(); 
+		    	     Thread myThread = new Thread(myRunner);
+		    	   
+		    	     myThread.start();
+		    	    
+		    	    	
+		}
+
+	    else if (((JButton)e.getSource()).getText().equals(generatePath.name)) {		
 			System.out.println("Generate Path ...");
 			
 			try {
@@ -502,7 +671,11 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 						new AnnounceFrame("Please add at least one 2d roi in the scan map sequence!");
 						return;	
 					}
-
+					  if(rois.size()<=0)
+					    {
+					    	  new AnnounceFrame("No roi found!");
+							  return;
+					    }
 					if(generateFilePath.getValue() != null)
 					{
 						pw = new PrintWriter(new FileWriter(generateFilePath.getValue()));
@@ -512,7 +685,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 						  new AnnounceFrame("Please select the 'Save Path'!");
 						  return;
 					}
-				
+				  
 					for(int i=0;i<rois.size();i++) 
 					{
 						ROI2D roi = rois.get(i);
@@ -521,11 +694,11 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 						double x1 = roi.getBounds().getMaxX();
 						double y1 = roi.getBounds().getMaxY();
 						//for(double a=x0;a<=x1;a+=stepSize.getValue())
-
 						pw.printf("(newSequence=%s-%d)\n",roi.getName(),i);
 						pw.printf("(location=%d,%d)\n",(int)x0,(int)y0);
 						pw.printf("(width=%d)\n",(int)((double)(x1-x0)/stepSize.getValue()-0.5));	
 						pw.printf("(height=%d)\n",(int)((double)(y1-y0)/stepSize.getValue()+0.5));	
+						pw.printf("(reset=1)\n");	
 						pw.printf("G90\n");		
 						pw.printf("M108 P%f Q%d\n",stepSize.getValue(),0);
 						
