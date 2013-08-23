@@ -75,7 +75,8 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 	
 	// some other data
 	boolean						stopFlag;
-	
+	boolean                     snapping;
+	boolean                     snapSuccess;
 	@Override
 	protected void initialize()
 	{
@@ -322,7 +323,29 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 		System.out.println(targetFolder.name + " = " + targetFolder.getValue());
 		System.out.println(note.name + " = " + note.getValue());
 
+		class SnapRunner implements Runnable{
+  		  public void run(){
+	  			try
+	  			{
+	  				System.out.println("snapping");
+	  				snapping = true;
+			  		//excute command
+			  		if(snap2Sequence())
+			  			snapSuccess = true;
+			  		else
+			  			snapSuccess = false;
 
+	  			}
+	  			catch(Exception e4)
+	  			{
+	  				new AnnounceFrame("Error when snapping image!");
+	  				System.out.println("error when snape image:");
+	  				e4.printStackTrace();
+	  			}
+  		  }
+  		}
+		SnapRunner snapRunner = new SnapRunner(); 
+		
 		try{
 		  // Open the file that is the first 
 		  // command line parameter
@@ -390,28 +413,20 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 			  		int retryCount = 0;
 
 			  		while(retryCount<maxRetryCount && !success){
+			  			snapping = false;
+			  			snapSuccess = false;
+			  			Thread myThread = new Thread(snapRunner);
+			  	  	    myThread.start();
+			  	  	    while(!snapping) 
+			  	  	    	Thread.sleep(10);
+			  	  	    Thread.sleep(10);
 			  			core.setProperty(xyStageParentLabel, "Command",strLine);			  			
 			  			retryCount++;
-			  			try
-			  			{
-			  				System.out.println("snapping");
-					  		//excute command
-					  		if(snap2Sequence())
-					  			success = true;
-					  		else
-					  			success = false;
-
-			  			}
-			  			catch(Exception e4)
-			  			{
-			  				new AnnounceFrame("Error when snapping image!");
-			  				System.out.println("error when snape image:");
-			  				e4.printStackTrace();
-			  			}
 				  		if(!waitUntilComplete())
 				  			success = false;
-				  		    
-				  		if(success)
+				  		else
+				  			success = true;
+				  		if(success && snapSuccess)
 				  			break;
 				  		
 				  		//if not success, then redo
