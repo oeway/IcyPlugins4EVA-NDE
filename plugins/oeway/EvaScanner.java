@@ -434,7 +434,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 			  			break; //exit current progress!
 			  		}
 			  		cpt++;
-			  		super.getUI().setProgressBarValue(((cpt/frameCount)*100)%100);
+			  		super.getUI().setProgressBarValue((double)cpt/frameCount);
 			  		super.getUI().setProgressBarMessage(Long.toString(cpt)+"/"+ Long.toString(frameCount));
 			  	}
 			  				  	
@@ -486,6 +486,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+		new AnnounceFrame("Task done!");
 //		int cpt = 0;
 //		while (!stopFlag)
 //		{
@@ -620,13 +621,13 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 										
 										
 										core.setProperty(xyStageParentLabel, "Command","G00 X" + Double.toString(x0)+" Y" + Double.toString(y0));
-										waitUntilComplete();
+										
 										core.setProperty(xyStageParentLabel, "Command","G00 X" + Double.toString(x1)+" Y" + Double.toString(y0));
-										waitUntilComplete();
+										
 										core.setProperty(xyStageParentLabel, "Command","G00 X" + Double.toString(x1)+" Y" + Double.toString(y1));
-										waitUntilComplete();
+										
 										core.setProperty(xyStageParentLabel, "Command","G00 X" + Double.toString(x0)+" Y" + Double.toString(y1));
-										waitUntilComplete();
+										
 										core.setProperty(xyStageParentLabel, "Command","G00 X" + Double.toString(x0)+" Y" + Double.toString(y0));
 										waitUntilComplete();
 									}	
