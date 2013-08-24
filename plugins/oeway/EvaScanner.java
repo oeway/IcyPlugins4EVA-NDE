@@ -334,7 +334,6 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 			  			snapSuccess = true;
 			  		else
 			  			snapSuccess = false;
-			  		
 
 	  			}
 	  			catch(Exception e4)
@@ -343,7 +342,6 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 	  				System.out.println("error when snape image:");
 	  				e4.printStackTrace();
 	  			}
-	  			snapping = false;
   		  }
   		}
 		SnapRunner snapRunner = new SnapRunner(); 
@@ -421,14 +419,13 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 			  	  	    myThread.start();
 			  	  	    while(!snapping) 
 			  	  	    	Thread.sleep(10);
+			  	  	    Thread.sleep(10);
 			  			core.setProperty(xyStageParentLabel, "Command",strLine);			  			
 			  			retryCount++;
 				  		if(!waitUntilComplete())
 				  			success = false;
 				  		else
 				  			success = true;
-				  		while(snapping) 
-			  	  	    	Thread.sleep(10);
 				  		if(success && snapSuccess)
 				  			break;
 				  		
