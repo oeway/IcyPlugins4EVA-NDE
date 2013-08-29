@@ -241,7 +241,10 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener,Ez
 		
         IcyBufferedImage capturedImage;
         if (core.isSequenceRunning())
-            capturedImage = ImageGetter.getImageFromLive(core);
+        {
+        	new AnnounceFrame("Sequence is running, close it before start!",10);
+        	return false;//capturedImage = ImageGetter.getImageFromLive(core);
+        }
         else
             capturedImage = ImageGetter.snapImage(core);
         
