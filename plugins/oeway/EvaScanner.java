@@ -1,14 +1,12 @@
 package plugins.oeway;
 import plugins.tprovoost.Microscopy.MicroManagerForIcy.MicroscopeCore;
-import plugins.tprovoost.Microscopy.MicroManagerForIcy.MicroscopePluginAcquisition;
 import plugins.tprovoost.Microscopy.MicroManagerForIcy.MicroscopeSequence;
 import plugins.tprovoost.Microscopy.MicroManagerForIcy.Tools.ImageGetter;
-import plugins.tprovoost.Microscopy.MicroManagerForIcy.Tools.StageMover;
+import icy.file.Saver;
 import icy.gui.frame.progress.AnnounceFrame;
 import icy.image.IcyBufferedImage;
 import icy.main.Icy;
 import icy.roi.ROI2D;
-import icy.sequence.MetaDataUtil;
 import icy.sequence.Sequence;
 
 import java.awt.event.ActionEvent;
@@ -17,9 +15,13 @@ import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashMap;
@@ -37,7 +39,7 @@ import icy.gui.viewer.Viewer;
  * @author Wei Ouyang
  * 
  */
-public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
+public class EvaScanner extends EzPlug implements EzStoppable, ActionListener,EzVarListener<File>
 {
 	
 
@@ -47,6 +49,8 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
     Sequence currentSequence = null;
 	EzButton 					markPos;
 	EzButton 					getPos;	
+	EzButton 					homing;	
+	EzButton 					reset;		
 	EzButton 					gotoPostion;
 	EzButton 					runBundlebox;
 	
@@ -56,7 +60,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 	EzButton 					generatePath;
 	EzVarDouble					stepSize;
 	EzVarSequence 				scanMapSeq;
-	EzVarFile					generateFilePath;	
+	
 	
 	EzVarDouble					scanSpeed;
 	EzVarFile					pathFile;
@@ -83,11 +87,12 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 		scanMapSeq = new EzVarSequence("Scan Map Sequence");
 		stepSize = new EzVarDouble("Step Size");
 		markPos = new EzButton("Mark Position", this);
-		gotoPostion = new EzButton("Goto Position", this);		
+		gotoPostion = new EzButton("Goto Position", this);
+		reset = new EzButton("Reset", this);
+		homing = new EzButton("Homing", this);
 		generatePath = new EzButton("Generate Path", this);
 		runBundlebox = new EzButton("Run Bundle Box",this);
 		getPos = new EzButton("Get Position", this);		
-		generateFilePath = new EzVarFile("Save Path", null);
 		posX = new EzVarDouble("X");
 		posY = new EzVarDouble("Y");		
 		
@@ -97,6 +102,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 		note = new EzVarText("Scan Note", new String[] { "Test" }, 0, true);
 		
 		targetFolder = new EzVarFolder("Target Folder", null);
+		targetFolder.addVarChangeListener(this);
 		
 		// 2) and added to the interface in the desired order
 		
@@ -104,17 +110,23 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 		stepSize.setValue(1.0);
 		scanSpeed.setValue(1000.0);
 		
-		EzGroup groupMark = new EzGroup("Mark", getPos,posX,posY,gotoPostion,markPos);
-		super.addEzComponent(groupMark);			
+		EzGroup groupInit= new EzGroup("Initialization", homing,reset);
+		super.addEzComponent(groupInit);			
 		
-		EzGroup groupScanMap = new EzGroup("Scan Map",scanMapSeq,runBundlebox,stepSize, scanSpeed,generateFilePath,generatePath);
+		EzGroup groupMark = new EzGroup("Mark", getPos,posX,posY,gotoPostion,markPos);
+		super.addEzComponent(groupMark);	
+		
+		EzGroup groupSettings = new EzGroup("Settings",targetFolder,note); //TODO:add targetFolder
+		super.addEzComponent(groupSettings);
+		
+		EzGroup groupScanMap = new EzGroup("Scan Map",scanMapSeq,runBundlebox,stepSize, scanSpeed,generatePath);
 		super.addEzComponent(groupScanMap);	
 		
 		
-		EzGroup groupSettings = new EzGroup("Settings", pathFile,note); //TODO:add targetFolder
-		super.addEzComponent(groupSettings);
+
 		
 		core = MicroscopeCore.getCore();
+
 		
 	}	
 	protected boolean waitUntilComplete()
@@ -124,7 +136,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 	    try {
 		   xyStageParentLabel = core.getParentLabel(xyStageLabel);
 		} catch (Exception e1) {
-			new AnnounceFrame("XY Stage Error!");
+			new AnnounceFrame("XY Stage Error!",5);
 			System.out.println("XY Stage Error...");
 			return false;
 		} 
@@ -141,7 +153,8 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 				{
 					e.printStackTrace();
 					try{
-						  Thread.currentThread().sleep(100);//sleep for 1000 ms
+						  Thread.currentThread();
+						Thread.sleep(100);//sleep for 1000 ms
 						  
 						}
 						catch(Exception ie){
@@ -164,7 +177,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
   		if(!status.equals( "Idle") && !stopFlag) // may be error occured
   		{
   			System.out.println("Stage error");
-  			new AnnounceFrame("XY stage status error!");
+  			new AnnounceFrame("XY stage status error!",5);
   			return false;
   		}
   		System.out.println("stage ok!");
@@ -175,14 +188,27 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 	{
 		try
 		{
-		   	if(currentSequence !=null)
-	    	{
-	//    		if(targetFolder.getValue() == null){
-	//    			new AnnounceFrame("Please select a target folder to store data!");
-	//    		}
-	    	    //TODO:save file here
-	    	}
-	    	
+			if(currentSequence !=null){
+				try {
+					if(targetFolder.getValue() != null){
+						File f = new File(targetFolder.getValue(),currentSequence.getName()+".tiff");
+						Saver.save(currentSequence,f,false,true);
+						new AnnounceFrame(currentSequence.getName() + " saved!",10);
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+					new AnnounceFrame("File haven't save!",10);
+				}
+				try {
+					copyFile(pathFile.getValue(),targetFolder.getValue(),currentSequence.getName()+"_gcode.txt");
+				} catch (Exception e) {
+					e.printStackTrace();
+					new AnnounceFrame("Gcode can not be copied!",10);
+				}
+			    //Close the input stream
+			    currentSequence = null;				
+			}
+
 	        MicroscopeSequence s = new MicroscopeSequence(capturedImage);
 	        Calendar calendar = Calendar.getInstance();
 	        Icy.getMainInterface().addSequence(s);
@@ -200,12 +226,12 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 	        
 	        OMEXMLMetadataImpl md = currentSequence.getMetadata();
 	        md.setImageDescription(note.getValue(), 0);
-	        new AnnounceFrame("New Sequence created:"+currentSeqName);
+	        new AnnounceFrame("New Sequence created:"+currentSeqName,5);
 
 		}
 		catch(Exception e)
 		{
-			new AnnounceFrame("Error when create new sequence!");
+			new AnnounceFrame("Error when create new sequence!",20);
 			return false;
 		}
         return true;
@@ -221,7 +247,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
         
         if (capturedImage == null)
         {
-            new AnnounceFrame("No image was captured");
+            new AnnounceFrame("No image was captured",30);
             return false;
         }
         
@@ -241,13 +267,13 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
                 if (currentSequence.getSizeC() > 0)
                     toAdd = toAdd
                             + ": impossible to capture images with a colored sequence. Only Snap C are possible.";
-                new AnnounceFrame("This sequence is not compatible" + toAdd);
+                new AnnounceFrame("This sequence is not compatible" + toAdd,30);
                 return false;
             }
             catch(IndexOutOfBoundsException e2)
             {
             	createAndAdd(capturedImage);
-            	new AnnounceFrame("IndexOutOfBoundsException,create new sequence instead!");
+            	new AnnounceFrame("IndexOutOfBoundsException,create new sequence instead!",5);
             }
         }
         return true;
@@ -256,13 +282,17 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 	@Override
 	protected void execute()
 	{
-		
+		if(targetFolder.getValue() == null){
+			stopFlag = true;
+			new AnnounceFrame("Please select a target folder to store data!",5);
+			return;
+		}
 		long cpt = 0;
 		stopFlag = false;
 		lastSeqName = "";
 		// main plugin code goes here, and runs in a separate thread
 		if(pathFile.getValue() == null){
-			new AnnounceFrame("Please select a path file!");
+			new AnnounceFrame("Please select a path file!",5);
 			return;
 		}
 		
@@ -271,18 +301,18 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 	   try {
 		   xyStageParentLabel = core.getParentLabel(xyStageLabel);
 		} catch (Exception e1) {
-			new AnnounceFrame("Please select 'EVA_NDE_Grbl' as the default XY Stage!");
+			new AnnounceFrame("Please select 'EVA_NDE_Grbl' as the default XY Stage!",5);
 			return;
 		} 
 	   
 		try {
 			if(!core.hasProperty(xyStageParentLabel,"Command"))
 			  {
-				  new AnnounceFrame("Please select 'EVA_NDE_Grbl' as the default XY Stage!");
+				  new AnnounceFrame("Please select 'EVA_NDE_Grbl' as the default XY Stage!",5);
 				  return;
 			  }
 		} catch (Exception e1) {
-			  new AnnounceFrame("XY Stage Error!");
+			  new AnnounceFrame("XY Stage Error!",5);
 			  return;
 		}
 		
@@ -290,18 +320,18 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 	   try {
 		   picoCameraParentLabel = core.getParentLabel(picoCameraLabel);
 		} catch (Exception e1) {
-			new AnnounceFrame("Please select 'picoCam' as the default camera device!");
+			new AnnounceFrame("Please select 'picoCam' as the default camera device!",5);
 			return;
 		} 
 	   
 		try {
 			if(!core.hasProperty(picoCameraLabel,"RowCount"))
 			  {
-				new AnnounceFrame("Please select 'picoCam' as the default camera device!");
+				new AnnounceFrame("Please select 'picoCam' as the default camera device!",5);
 				  return;
 			  }
 		} catch (Exception e1) {
-			  new AnnounceFrame("Camera Error!");
+			  new AnnounceFrame("Camera Error!",5);
 			  return;
 		}		
 		
@@ -314,7 +344,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 		try {
 			oldRowCount = core.getProperty(picoCameraLabel, "RowCount");
 		} catch (Exception e1) {
-			  new AnnounceFrame("Camera Error!");
+			  new AnnounceFrame("Camera Error!",5);
 			  return;
 		}
 		System.out.println(scanSpeed.name + " = " + scanSpeed.getValue());
@@ -377,7 +407,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 				  			}
 				  		}
 				  		else{
-				  			new AnnounceFrame(tmp[0]+":"+tmp[1]);
+				  			new AnnounceFrame(tmp[0]+":"+tmp[1],5);
 				  		}
 			  		}
 					catch (Exception e){//Catch exception if any
@@ -404,7 +434,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 			  			}
 			  			catch(Exception e4)
 			  			{
-			  				new AnnounceFrame("Error when snapping image!");
+			  				new AnnounceFrame("Error when snapping image!",5);
 			  				System.out.println("error when snape image:");
 			  				e4.printStackTrace();
 			  			}
@@ -425,7 +455,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 									e1.printStackTrace();
 								}
 							  System.out.println("Error when waiting for the stage to complete");
-				  			return;
+				  			break;
 				  		}
 			  			
 			  		}
@@ -458,42 +488,50 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 								// TODO Auto-generated catch block
 								e1.printStackTrace();
 							}
-			  			return;
+			  			break;
 			  		}
 			  	}
 			  }
-		  //Close the input stream
-		  currentSequence = null;
 		  lastG00 ="";
 		  in.close();
-		  core.setProperty(picoCameraLabel, "RowCount",oldRowCount);
+
 		}
 		catch (Exception e){//Catch exception if any
 			  super.getUI().setProgressBarMessage("error!");
 			  System.err.println("Error: " );
 			  e.printStackTrace();
-			  try {
-				core.setProperty(picoCameraLabel, "RowCount",oldRowCount);
-			} catch (Exception e1) {
-				// TODO Auto-generated catch block
-				e1.printStackTrace();
+		}
+		finally{
+			if(currentSequence !=null){
+				try {
+					if(targetFolder.getValue() != null){
+						File f = new File(targetFolder.getValue(),currentSequence.getName()+".tiff");
+						Saver.save(currentSequence,f,false);
+						new AnnounceFrame(currentSequence.getName() + " saved!",10);
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+					new AnnounceFrame("File haven't save!",10);
+				}
+				try {
+					copyFile(pathFile.getValue(),targetFolder.getValue(),currentSequence.getName()+"_gcode.txt");
+				} catch (Exception e) {
+					e.printStackTrace();
+					new AnnounceFrame("Gcode can not be copied!",10);
+				}
+				//Close the input stream
+			    currentSequence = null;				
 			}
-			  return;
+
+
+			try {
+				core.setProperty(picoCameraLabel, "RowCount",oldRowCount);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
 		}
-		try {
-			core.setProperty(picoCameraLabel, "RowCount",oldRowCount);
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		new AnnounceFrame("Task done!");
-//		int cpt = 0;
-//		while (!stopFlag)
-//		{
-//			cpt++;
-//			if (cpt % 10 == 0) super.getUI().setProgressBarValue((cpt % 5000000) / 5000000.0);
-//			Thread.yield();			
-//		}
+		new AnnounceFrame("Task Over!",20);
+
 	}
 	
 	@Override
@@ -531,11 +569,11 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 				}
 				else
 				{
-					  new AnnounceFrame("No sequence selected!");
+					  new AnnounceFrame("No sequence selected!",10);
 					  return;
 				}
 			} catch (Exception e1) {
-				  new AnnounceFrame("Marking on sequence failed!");
+				  new AnnounceFrame("Marking on sequence failed!",10);
 				  e1.printStackTrace();
 				  return;
 			}
@@ -546,9 +584,9 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 				try {
 					xyStageLabel = core.getXYStageDevice();
 					core.setXYPosition(xyStageLabel, posX.getValue()*1000.0, posY.getValue()*1000.0);
-					// new AnnounceFrame("Goto position...!");
+					//new AnnounceFrame("Goto position...!",5);
 				} catch (Exception e1) {
-					  new AnnounceFrame("Goto position failed!");
+					  new AnnounceFrame("Goto position failed!",10);
 					  return;
 				}
 		}
@@ -561,7 +599,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 					posX.setValue(x_stage[0]/1000.0);
 					posY.setValue(y_stage[0]/1000.0);
 				} catch (Exception e1) {
-					  new AnnounceFrame("Get position failed!");
+					  new AnnounceFrame("Get position failed!",10);
 					  return;
 				}
 		}
@@ -577,18 +615,18 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 									   try {
 										   xyStageParentLabel = core.getParentLabel(xyStageLabel);
 										} catch (Exception e1) {
-											new AnnounceFrame("Please select 'EVA_NDE_Grbl' as the default XY Stage!");
+											new AnnounceFrame("Please select 'EVA_NDE_Grbl' as the default XY Stage!",20);
 											return;
 										} 
 									   
 										try {
 											if(!core.hasProperty(xyStageParentLabel,"Command"))
 											  {
-												  new AnnounceFrame("Please select 'EVA_NDE_Grbl' as the default XY Stage!");
+												  new AnnounceFrame("Please select 'EVA_NDE_Grbl' as the default XY Stage!",20);
 												  return;
 											  }
 										} catch (Exception e1) {
-											  new AnnounceFrame("XY Stage Error!");
+											  new AnnounceFrame("XY Stage Error!",10);
 											  return;
 										}
 										
@@ -602,12 +640,12 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 									}
 									catch (Exception e1)
 									{
-										new AnnounceFrame("Please add at least one 2d roi in the scan map sequence!");
+										new AnnounceFrame("Please add at least one 2d roi in the scan map sequence!",10);
 										return;	
 									}
 									  if(rois.size()<=0)
 									    {
-									    	  new AnnounceFrame("No roi found!");
+									    	  new AnnounceFrame("No roi found!",5);
 											  return;
 									    }
 								    core.setProperty(xyStageParentLabel, "Command","G90");
@@ -634,9 +672,9 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 				
 			
 								}
-								 new AnnounceFrame("Bundle box complete!");
+								 new AnnounceFrame("Bundle box complete!",5);
 							} catch (Exception e1) {
-								  new AnnounceFrame("Error when run bundle box!");
+								  new AnnounceFrame("Error when run bundle box!",10);
 								  return;
 							}
 		    		  }
@@ -648,7 +686,44 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 		    	    
 		    	    	
 		}
+		else if (((JButton)e.getSource()).getText().equals(reset.name)) {	
+	    	try {
+	    		 xyStageLabel = core.getXYStageDevice();
+				   try {
+					   xyStageParentLabel = core.getParentLabel(xyStageLabel);
+					} catch (Exception e1) {
+						new AnnounceFrame("Please select 'EVA_NDE_Grbl' as the default XY Stage!",20);
+						return;
+					} 
+				core.setProperty(xyStageParentLabel, "Command",String.valueOf((char)0x18));
+			} catch (Exception e1) {
+				 new AnnounceFrame("Reset failed!",10);
+			}
+	    }
+	    else if (((JButton)e.getSource()).getText().equals(homing.name)) {	
+	    	
+	    	class MyRunner implements Runnable{
+	    		  public void run(){
+		    		    	try {
+		    		    		 xyStageLabel = core.getXYStageDevice();
+		    					   try {
+		    						   xyStageParentLabel = core.getParentLabel(xyStageLabel);
+		    						} catch (Exception e1) {
+		    							new AnnounceFrame("Please select 'EVA_NDE_Grbl' as the default XY Stage!",20);
+		    							return;
+		    						} 
+		    					core.setProperty(xyStageParentLabel, "Command","$H");
+		    					new AnnounceFrame("Homing completed!",5);
+		    				} catch (Exception e1) {
+		    					 new AnnounceFrame("Homing error,try to restart controller!",10);
+		    				}
+	    		  		}
+	    		}
+	    	     MyRunner myRunner = new MyRunner(); 
+	    	     Thread myThread = new Thread(myRunner);
+	    	     myThread.start();
 
+	    }
 	    else if (((JButton)e.getSource()).getText().equals(generatePath.name)) {		
 			System.out.println("Generate Path ...");
 			
@@ -657,7 +732,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 				{
 					if(stepSize.getValue()<=0.0)
 					{
-						  new AnnounceFrame("Step size error!");
+						  new AnnounceFrame("Step size error!",20);
 						  return;
 					}
 					
@@ -669,21 +744,21 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 					}
 					catch (Exception e1)
 					{
-						new AnnounceFrame("Please add at least one 2d roi in the scan map sequence!");
+						new AnnounceFrame("Please add at least one 2d roi in the scan map sequence!",5);
 						return;	
 					}
 					  if(rois.size()<=0)
 					    {
-					    	  new AnnounceFrame("No roi found!");
+					    	  new AnnounceFrame("No roi found!",5);
 							  return;
 					    }
-					if(generateFilePath.getValue() != null)
+					if(pathFile.getValue() != null)
 					{
-						pw = new PrintWriter(new FileWriter(generateFilePath.getValue()));
+						pw = new PrintWriter(new FileWriter(pathFile.getValue()));
 					}
 					else
 					{
-						  new AnnounceFrame("Please select the 'Save Path'!");
+						  new AnnounceFrame("Please select the 'Target Folder'!",5);
 						  return;
 					}
 				  
@@ -709,22 +784,63 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener
 							pw.printf("G01 X%f Y%f F%f\n",x1,b,scanSpeed.getValue());
 						}
 					}	
-					pw.printf("G00 X0 Y0\n");
+					//pw.printf("G00 X0 Y0\n");
 					pw.close();	
 					
 					File old = pathFile.getValue();
-					pathFile.setValue(generateFilePath.getValue()); //set the path as the default value.
-					pathFile.valueChanged(null,old, generateFilePath.getValue());
-					new AnnounceFrame("Generated successfully!");
+					pathFile.setValue(pathFile.getValue()); //set the path as the default value.
+					pathFile.valueChanged(null,old, pathFile.getValue());
+					new AnnounceFrame("Generated successfully!",5);
 					
 
 				}
 			} catch (Exception e1) {
-				  new AnnounceFrame("Error when generate path file!");
+				  new AnnounceFrame("Error when generate path file!",20);
 				  return;
 			}
 			
 		}
 	}
+	@Override
+	public void variableChanged(EzVar<File> source, File newValue) {
+		try{
+			File f = new File(newValue.getPath(),"gcode.txt");
+			pathFile.setValue(f);
+		}catch(Exception e){
+			 new AnnounceFrame("Error path",20);
+		}
+	}
+	
+	
+	public static long copyFile(File srcFile, File destDir, String newFileName) {
+		long copySizes = 0;
+		if (!srcFile.exists()) {
+			System.out.println("File does not exist!");
+			copySizes = -1;
+		} else if (!destDir.exists()) {
+			System.out.println("Target folder does not exist");
+			copySizes = -1;
+		} else if (newFileName == null) {
+			System.out.println("File name is null");
+			copySizes = -1;
+		} else {
+			try {
+				FileChannel fcin = new FileInputStream(srcFile).getChannel();
+				FileChannel fcout = new FileOutputStream(new File(destDir,
+						newFileName)).getChannel();
+				long size = fcin.size();
+				fcin.transferTo(0, fcin.size(), fcout);
+				fcin.close();
+				fcout.close();
+				copySizes = size;
+			} catch (FileNotFoundException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		return copySizes;
+	}
+
 	
 }
