@@ -38,6 +38,8 @@ import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Timer;
+import java.util.TimerTask;
 
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -47,7 +49,6 @@ import javax.swing.SwingConstants;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartMouseEvent;
 import org.jfree.chart.ChartMouseListener;
-import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.plot.Marker;
@@ -69,7 +70,7 @@ public class IntensityProfile  {
 	JButton rowOColBtn = new JButton("row");
 	JLabel indexLbl = new JLabel("0");
 	JLabel maxIndexLbl = new JLabel("0");
-	public ChartPanel chartPanel ;
+	public PanningChartPanel chartPanel ;
 	public JFreeChart chart;
 	XYSeriesCollection xyDataset = new XYSeriesCollection();
 	
@@ -90,6 +91,22 @@ public class IntensityProfile  {
 	IcyCanvas mainCanvas;
 	public int posX = 0;
 	public int posY = 0;
+	
+	public boolean timerTaskSet = false;
+    Timer timer;
+    public void PreventUpdateTimer(int seconds) {
+        timer = new Timer();
+        timerTaskSet = true;
+        timer.schedule(new TimerTestTask(), seconds*1000);
+    }
+    class TimerTestTask extends TimerTask {
+        public void run() {
+            System.out.println("In TimerTestTask, execute run method.");
+            timer.cancel(); 
+            timerTaskSet = false;
+        }
+    }
+	
 	public IntensityProfile(IcyCanvas mainCav,Sequence seq){
 		
 		sequence = seq;
@@ -135,7 +152,6 @@ public class IntensityProfile  {
             }
         });
         rowOColBtn.setToolTipText("slide in row or column");
-
         
         indexLbl.setHorizontalAlignment(JLabel.RIGHT );
         maxIndexLbl.setHorizontalAlignment(JLabel.RIGHT );
@@ -176,11 +192,12 @@ public class IntensityProfile  {
         });
         ComponentUtil.setFixedHeight(slider, 22);
 		 
+        
 		// Chart
 		chart = ChartFactory.createXYLineChart(
 				"", "", "intensity", xyDataset,
 				PlotOrientation.VERTICAL, false, true, true);
-		chartPanel = new ChartPanel(chart, 500, 200, 500, 200, 500, 500, false, false, true, false, true, true);		
+		chartPanel = new PanningChartPanel(chart, 500, 200, 500, 200, 500, 500, false, false, true, false, true, true);		
 		
 		
 		chartPanel.addChartMouseListener(new ChartMouseListener() {
@@ -192,6 +209,9 @@ public class IntensityProfile  {
 
             @Override
             public void chartMouseMoved(final ChartMouseEvent event){
+                if(!timerTaskSet){
+                	PreventUpdateTimer(2);
+                }
             	try
             	{
 	                Point2D p = event.getTrigger().getPoint();
@@ -263,6 +283,8 @@ public class IntensityProfile  {
 	}
 	public void updateChart()
 	{
+		if(timerTaskSet)
+			return;
 		chart.setAntiAlias( true );
 		chart.setTextAntiAlias( true );
 		

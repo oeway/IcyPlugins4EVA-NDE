@@ -285,6 +285,11 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener,Ez
 	@Override
 	protected void execute()
 	{
+        if (core.isSequenceRunning())
+        {
+        	new AnnounceFrame("Sequence is running, close it before start!",10);
+        	return ;//capturedImage = ImageGetter.getImageFromLive(core);
+        }
 		if(targetFolder.getValue() == null){
 			stopFlag = true;
 			new AnnounceFrame("Please select a target folder to store data!",5);
