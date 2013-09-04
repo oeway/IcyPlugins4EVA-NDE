@@ -443,7 +443,8 @@ public class IntensityProfile  {
 			rowOColBtn.setText("row");
 			slider.setMaximum(sequence.getHeight()-1);
         	slider.setMinimum(0);
-        	slider.setValue(0);
+        	if(slider.getValue()>sequence.getHeight()-1)
+        		slider.setValue(0);
         	indexLbl.setText(String.valueOf(slider.getValue()));
         	maxIndexLbl.setText(String.valueOf(sequence.getHeight()-1));
         	
@@ -453,7 +454,8 @@ public class IntensityProfile  {
 			rowOColBtn.setText("column");
 			slider.setMaximum(sequence.getWidth()-1);
         	slider.setMinimum(0);
-        	slider.setValue(0);
+        	if(slider.getValue()>sequence.getWidth()-1)
+        		slider.setValue(0);
         	indexLbl.setText(String.valueOf(slider.getValue()));
         	maxIndexLbl.setText(String.valueOf(sequence.getWidth()-1));
 		}
