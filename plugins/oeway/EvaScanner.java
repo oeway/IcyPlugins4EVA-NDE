@@ -1,4 +1,5 @@
 package plugins.oeway;
+import plugins.tprovoost.Microscopy.MicroManagerForIcy.MicromanagerPlugin;
 import plugins.tprovoost.Microscopy.MicroManagerForIcy.MicroscopeCore;
 import plugins.tprovoost.Microscopy.MicroManagerForIcy.MicroscopeSequence;
 import plugins.tprovoost.Microscopy.MicroManagerForIcy.Tools.ImageGetter;
@@ -6,8 +7,12 @@ import icy.file.Saver;
 import icy.gui.frame.progress.AnnounceFrame;
 import icy.image.IcyBufferedImage;
 import icy.main.Icy;
+import icy.plugin.PluginDescriptor;
+import icy.plugin.PluginLauncher;
+import icy.plugin.PluginLoader;
 import icy.roi.ROI2D;
 import icy.sequence.Sequence;
+import icy.system.thread.ThreadUtil;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -79,10 +84,39 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener,Ez
 	
 	// some other data
 	boolean						stopFlag;
+	void startMicroManagerForIcy()
+	{
+		try {
+	        // we get all the PluginDescriptor from the PluginManager
+	        for (final PluginDescriptor pluginDescriptor : PluginLoader.getPlugins())
+	        {
+	        	//System.out.println(pluginDescriptor.getSimpleClassName()); 
+	            // This part of the example check for a match in the name of the class
+	            if (pluginDescriptor.isInstanceOf(MicromanagerPlugin.class))
+	            {
+	                // Create a new Runnable which contain the proper launcher
+	                ThreadUtil.invokeLater(new Runnable()
+	                {
+	                    @Override
+	                    public void run()
+	                    {
+	                        PluginLauncher.start(pluginDescriptor);
+	                    }
+	                });
+	            }
+	        }
+		}catch (Exception e1) {
+			new AnnounceFrame("Error When Start MicroManagerForIcy!",5);
+			System.out.println("MicroManagerForIcy start failed...");
+
+		} 
+		
+	}
 	
 	@Override
 	protected void initialize()
 	{
+		startMicroManagerForIcy();
 		// 1) variables must be initialized
 		scanMapSeq = new EzVarSequence("Scan Map Sequence");
 		stepSize = new EzVarDouble("Step Size");
@@ -121,9 +155,6 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener,Ez
 		
 		EzGroup groupScanMap = new EzGroup("Scan Map",scanMapSeq,runBundlebox,stepSize, scanSpeed,generatePath);
 		super.addEzComponent(groupScanMap);	
-		
-		
-
 		
 		core = MicroscopeCore.getCore();
 
@@ -238,7 +269,6 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener,Ez
 	}
 	protected boolean snap2Sequence()
 	{
-		
         IcyBufferedImage capturedImage;
         if (core.isSequenceRunning())
         {
@@ -285,6 +315,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener,Ez
 	@Override
 	protected void execute()
 	{
+		core = MicroscopeCore.getCore();
         if (core.isSequenceRunning())
         {
         	new AnnounceFrame("Sequence is running, close it before start!",10);
@@ -560,7 +591,7 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener,Ez
 
 	@Override
 	public void actionPerformed(ActionEvent e) {
-		
+		core = MicroscopeCore.getCore();
 		if (((JButton)e.getSource()).getText().equals(markPos.name)) {
 					
 		   xyStageLabel = core.getXYStageDevice();
@@ -811,11 +842,14 @@ public class EvaScanner extends EzPlug implements EzStoppable, ActionListener,Ez
 	}
 	@Override
 	public void variableChanged(EzVar<File> source, File newValue) {
-		try{
-			File f = new File(newValue.getPath(),"gcode.txt");
-			pathFile.setValue(f);
-		}catch(Exception e){
-			 new AnnounceFrame("Error path",20);
+		if(newValue != null)
+		{
+			try{
+				File f = new File(newValue.getPath(),"gcode.txt");
+				pathFile.setValue(f);
+			}catch(Exception e){
+				 new AnnounceFrame("Error path",20);
+			}
 		}
 	}
 	
